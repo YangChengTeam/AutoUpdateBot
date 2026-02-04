@@ -560,15 +560,24 @@ class BotHYKB:
                 copy_url_btn.click()
                 time.sleep(1)
                 
-                # 3. 从剪贴板获取链接
-                share_url = self.d.clipboard
-                logger.info(f"获取到分享链接: {share_url}")
+                # 3. 从剪贴板获取内容
+                clipboard_content = self.d.clipboard
+                logger.info(f"剪贴板内容: {clipboard_content}")
                 
-                # 4. 上报
+                # 4. 从文本中提取 URL
+                share_url = None
+                if clipboard_content:
+                    # 使用正则提取 http/https 链接
+                    url_match = re.search(r'https?://[^\s]+', clipboard_content)
+                    if url_match:
+                        share_url = url_match.group()
+                        logger.info(f"提取到链接: {share_url}")
+                
+                # 5. 上报
                 if share_url:
                     self.reporter.report_app_urls([share_url])
                     
-                    # 5. 记录到每日日志
+                    # 6. 记录到每日日志
                     self._write_to_daily_log(self.current_title, share_url)
                     return True
                 else:
