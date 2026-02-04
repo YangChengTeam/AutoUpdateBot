@@ -22,9 +22,9 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=log_handlers
 )
-logger = logging.getLogger("7723Bot")
+logger = logging.getLogger("HYKBBot")
 
-class Bot7723:
+class BotHYKB:
     def __init__(self):
         setup_env()  # 初始化环境（加载本地 ADB 路径）
         self.config = self._get_config()
@@ -32,14 +32,14 @@ class Bot7723:
         self.device_manager = DeviceManager(serial)
         self.d = self.device_manager.d
         self.reporter = ReportService(self.config.get('api', {}))
-        self.package_name = "com.upgadata.up7723"
+        self.package_name = "com.xmcy.hykb"
         self.processed_titles = set()
         self._init_daily_log()
 
     def _init_daily_log(self):
         """初始化每日日志目录"""
         base_path = self._get_base_path()
-        self.log_dir = os.path.join(base_path, "logs", "7723")
+        self.log_dir = os.path.join(base_path, "logs", "hykb")
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
             logger.info(f"创建日志目录: {self.log_dir}")
@@ -124,27 +124,17 @@ class Bot7723:
         """判断是否在详情页"""
         if activity is None:
             activity = self.get_activity()
-        # 7723 的详情页 Activity 名称
-        return "DetailGameActivity" in activity
+        # HYKB 的详情页 Activity 名称
+        return "GameDetailActivity" in activity
 
     def is_home_page(self, activity=None):
-        """判断是否在首页的新游页面 (检查新游标签是否为选中状态)"""
+        """判断是否在首页"""
         if activity is None:
             activity = self.get_activity()
-        # 首先检查是否在 HomeActivity
-        if "HomeActivity" not in activity:
-            return False
-        # 然后检查"新游"标签是否为选中状态
-        new_game_tab = self.d(text="新游")
-        if new_game_tab.exists:
-            try:
-                return new_game_tab.info.get('selected', False)
-            except:
-                return False
-        return False
+        return "MainActivity" in activity
 
     def start(self, stop_func=None):
-        logger.info("正在启动 7723 应用...")
+        logger.info("正在启动 好游快爆 应用...")
         self.d.app_start(self.package_name, stop=True)
         time.sleep(5)
         
@@ -158,46 +148,44 @@ class Bot7723:
             # 处理可能出现的弹窗
             self.handle_popups()
             
-            # 检测是否在新游页面 (新游标签被选中)
+            # 检测是否在首页
             if self.is_home_page(activity):
-                logger.info("检测到已进入【新游】页面，开始采集...")
-                self.loop_crawl(stop_func)
-                break
+                logger.info("检测到已进入首页，开始导航到【最新上架】...")
+                if self.navigate_to_newest():
+                    self.loop_crawl(stop_func)
+                    break
             else:
-                logger.info(f"当前不在【新游】页面 (当前 Activity: {activity})，尝试自动导航...")
+                logger.info(f"当前不在首页 (当前 Activity: {activity})，尝试自动导航...")
                 self.handle_popups()
-                if not self.navigate_to_new_games():
-                    logger.warning("自动导航失败，请手动切换到【新游】页面...")
-                    time.sleep(5)
+                time.sleep(3)
 
-    def navigate_to_new_games(self):
-        """导航到新游页面"""
-        activity = self.get_activity()
-        
-        # 0. 如果已经在新游页面 (新游标签被选中)，直接返回成功
-        if self.is_home_page(activity):
-            logger.info("已在【新游】页面")
-            return True
-        
-        # 1. 处理弹窗
-        self.handle_popups()
-        
-        # 2. 点击"新游"标签
-        new_game_btn = self.d(text="新游")
-        if new_game_btn.exists:
-            logger.info("点击【新游】标签")
-            new_game_btn.click()
+    def navigate_to_newest(self):
+        """导航到最新上架页面"""
+        # 1. 先点击精选 tab
+        jingxuan_btn = self.d(resourceId="com.xmcy.hykb:id/title", text="精选")
+        if jingxuan_btn.exists:
+            logger.info("点击【精选】标签")
+            jingxuan_btn.click()
             time.sleep(2)
-            
-            # 检查新游标签是否变为选中状态
-            if self.is_home_page():
-                logger.info("成功进入【新游】页面")
-                return True
         
+        # 2. 向下滚动找到"最新上架"
+        for i in range(10):
+            newest_btn = self.d(resourceId="com.xmcy.hykb:id/tv_tab_title", text="最新上架")
+            if newest_btn.exists:
+                logger.info("找到【最新上架】，点击进入...")
+                newest_btn.click()
+                time.sleep(2)
+                return True
+            
+            logger.info(f"未找到【最新上架】，正在进行第 {i+1} 次向下滑动...")
+            self._swipe_up()
+            time.sleep(1)
+        
+        logger.warning("未能找到【最新上架】")
         return False
 
     def handle_popups(self):
-        """处理可能出现的弹窗 (同意、知道了等)"""
+        """处理可能出现的弹窗"""
         # 1. 强行检查包名，如果跳出了应用则切回
         try:
             current = self.d.app_current()
@@ -208,7 +196,17 @@ class Bot7723:
         except:
             pass
 
-        # 2. 处理通用弹窗
+        # 2. 处理广告弹窗 (首页通知关闭按钮)
+        try:
+            ad_close = self.d(resourceId="com.xmcy.hykb:id/dialog_home_notice_image_close")
+            if ad_close.exists(timeout=1):
+                logger.info("关闭广告弹窗")
+                ad_close.click()
+                time.sleep(1)
+        except:
+            pass
+
+        # 3. 处理通用弹窗
         popups = ["同意", "知道了", "我知道了", "跳过", "始终允许", "以后再说", "取消", "关闭", "Skip", "Close"]
         for p in popups:
             try:
@@ -242,24 +240,9 @@ class Bot7723:
                 self.d.press("back")
                 time.sleep(1.5)
             
-            # 通过切换 tab 重置列表位置（精选 -> 新游）
-            logger.info("通过切换 tab 重置列表位置...")
-            try:
-                jingxuan_btn = self.d(text="精选")
-                if jingxuan_btn.exists:
-                    jingxuan_btn.click()
-                    time.sleep(0.5)
-                
-                xinyou_btn = self.d(text="新游")
-                if xinyou_btn.exists:
-                    xinyou_btn.click()
-                    time.sleep(1)
-                    logger.info("已切换到【新游】页面")
-            except Exception as e:
-                logger.warning(f"切换 tab 失败: {e}，尝试back导航...")
-                self.d.press("back")
-                time.sleep(2)
-                self.navigate_to_new_games()
+            # 重置列表位置
+            logger.info("重置列表位置...")
+            self.reset_list_position()
             
             time.sleep(1)
             
@@ -269,6 +252,20 @@ class Bot7723:
                 if stop_func and stop_func():
                     return
                 time.sleep(1)
+
+    def reset_list_position(self):
+        """重置列表位置到最新上架"""
+        try:
+            # 先点击其他 tab 再点回精选
+            jingxuan_btn = self.d(resourceId="com.xmcy.hykb:id/title", text="精选")
+            if jingxuan_btn.exists:
+                jingxuan_btn.click()
+                time.sleep(1)
+            
+            # 重新导航到最新上架
+            self.navigate_to_newest()
+        except Exception as e:
+            logger.warning(f"重置列表位置失败: {e}")
 
     def _swipe_up(self):
         """上拉滑动"""
@@ -289,22 +286,17 @@ class Bot7723:
         self.d.swipe(start_x, start_y, start_x, end_y, duration=0.3)
         time.sleep(0.8)
 
+    def _click_blank_area(self):
+        """点击空白区域关闭弹窗"""
+        screen_width = self.d.info['displayWidth']
+        screen_height = self.d.info['displayHeight']
+        # 点击屏幕左上角区域
+        self.d.click(int(screen_width * 0.1), int(screen_height * 0.1))
+        time.sleep(0.5)
 
     def _scroll_to_last_item(self, last_title=None):
-        """通过切换 tab 重置列表位置，然后滚动到上次处理的项目"""
-        # 先点击"精选"再点击"新游"，可以重置列表到今日位置
-        try:
-            jingxuan_btn = self.d(text="精选")
-            if jingxuan_btn.exists:
-                jingxuan_btn.click()
-                time.sleep(0.5)
-            
-            xinyou_btn = self.d(text="新游")
-            if xinyou_btn.exists:
-                xinyou_btn.click()
-                time.sleep(1)
-        except Exception as e:
-            logger.debug(f"切换 tab 失败: {e}")
+        """重置列表并滚动到上次处理的项目"""
+        self.reset_list_position()
         
         if not last_title:
             return True
@@ -312,15 +304,10 @@ class Bot7723:
         # 滚动直到找到上次处理的项目
         for i in range(15):  # 最多滚动15次
             # 查找是否有该标题
-            title_elem = self.d(resourceId="com.upgadata.up7723:id/item_game_normal_title", text=last_title)
+            title_elem = self.d.xpath(f'//*[@resource-id="com.xmcy.hykb:id/item_homeindex_game_title"]/android.widget.TextView[@text="{last_title}"]')
             if title_elem.exists:
-                try:
-                    bounds = title_elem.info.get('visibleBounds', {})
-                    if bounds.get('top', 0) > 0:
-                        logger.info(f"找到上次处理的项目【{last_title}】")
-                        return True
-                except:
-                    pass
+                logger.info(f"找到上次处理的项目【{last_title}】")
+                return True
             
             # 继续滚动
             self._swipe_up()
@@ -340,18 +327,18 @@ class Bot7723:
             if stop_func and stop_func():
                 return False
             
-            # 必须是在新游页面才能点击
+            # 必须是在首页才能点击
             if not self.is_home_page():
-                logger.warning(f"当前不在新游页面 (Activity: {self.get_activity()})，尝试回退...")
+                logger.warning(f"当前不在首页 (Activity: {self.get_activity()})，尝试回退...")
                 self.handle_popups()
                 self.d.press("back")
                 time.sleep(1.5)
                 if not self.is_home_page():
-                    logger.error("无法返回新游页面，跳出本轮循环")
+                    logger.error("无法返回首页，跳出本轮循环")
                     return False
 
-            # 直接查找所有的标题元素
-            title_items = self.d(resourceId="com.upgadata.up7723:id/item_game_normal_title")
+            # 查找列表项标题
+            title_items = self.d.xpath('//*[@resource-id="com.xmcy.hykb:id/item_homeindex_game_title"]/android.widget.TextView[1]')
             
             if not title_items.exists:
                 logger.warning("未能找到列表项标题")
@@ -360,7 +347,8 @@ class Bot7723:
                 continue
 
             current_screen_last_title = None
-            item_count = title_items.count
+            all_items = title_items.all()
+            item_count = len(all_items)
             logger.info(f"当前屏幕找到 {item_count} 个标题元素")
             
             for i in range(item_count):
@@ -372,15 +360,16 @@ class Bot7723:
 
                 try:
                     # 重新获取元素列表（因为返回后页面可能刷新）
-                    title_items = self.d(resourceId="com.upgadata.up7723:id/item_game_normal_title")
-                    if i >= title_items.count:
-                        logger.info(f"索引 {i} 超出当前元素数量 {title_items.count}，等待下一页")
+                    title_items = self.d.xpath('//*[@resource-id="com.xmcy.hykb:id/item_homeindex_game_title"]/android.widget.TextView[1]')
+                    all_items = title_items.all()
+                    if i >= len(all_items):
+                        logger.info(f"索引 {i} 超出当前元素数量 {len(all_items)}，等待下一页")
                         break
                     
-                    title_elem = title_items[i]
+                    title_elem = all_items[i]
                     
                     # 获取标题文本
-                    title = title_elem.get_text() if title_elem.exists else "未知应用"
+                    title = title_elem.text if title_elem else "未知应用"
                     # 移除标题中的 | 字符，避免日志解析问题
                     if title:
                         title = title.replace("|", "")
@@ -447,62 +436,69 @@ class Bot7723:
 
     def check_and_share(self):
         """判断是否为今天更新，若是则执行分享。"""
-        # 滚动查找"更新时间"元素
-        update_time_title = None
+        # 1. 滚动查找"更多"按钮并点击
+        more_btn = None
         for i in range(6):
             self.handle_popups()
             
-            # 查找"更新时间"标题元素
-            update_time_title = self.d(resourceId="com.upgadata.up7723:id/text_title", text="更新时间")
-            if update_time_title.exists:
-                # 检查元素是否在屏幕内
-                if update_time_title.info['visibleBounds']['top'] < self.d.info['displayHeight']:
-                    break
+            more_btn = self.d(resourceId="com.xmcy.hykb:id/module_e_more")
+            if more_btn.exists:
+                logger.info("找到【更多】按钮，点击展开详情...")
+                more_btn.click()
+                time.sleep(1)
+                break
             
             if i < 5:
-                logger.info(f"未找到【更新时间】元素，正在进行第 {i+1} 次向下滑动查找...")
-                self._swipe_up_detail()  # 使用详情页专用滑动，避免切换 tab
+                logger.info(f"未找到【更多】按钮，正在进行第 {i+1} 次向下滑动查找...")
+                self._swipe_up_detail()
                 time.sleep(1.5)
 
-        # 获取更新时间的值 (在 text_title="更新时间" 下面的 text_content)
-        # 由于页面可能有多个 text_content，需要找到"更新时间"标题对应的那个
+        # 2. 查找更新时间元素 - 先找"更新时间"标签，再获取对应的时间值
         time_text = None
-        if update_time_title and update_time_title.exists:
+        update_time_label = self.d(resourceId="com.xmcy.hykb:id/item_gametail_gameinfo_text_toptext", text="更新时间")
+        
+        if update_time_label.exists:
+            logger.info("找到【更新时间】标签")
             try:
-                # 方法1: 通过父元素找到同级的 text_content
-                parent = update_time_title.sibling(resourceId="com.upgadata.up7723:id/text_content")
-                if parent.exists:
-                    time_text = parent.get_text()
+                # 方法1: 通过 sibling 获取同级的时间值元素
+                time_elem = update_time_label.sibling(resourceId="com.xmcy.hykb:id/item_gametail_gameinfo_text_bottomtext")
+                if time_elem.exists:
+                    time_text = time_elem.get_text()
                     logger.info(f"检测到更新时间文本 (sibling): {time_text}")
             except Exception as e:
                 logger.debug(f"sibling 方法失败: {e}")
             
             if not time_text:
                 try:
-                    # 方法2: 获取更新时间标题的位置，找到下方最近的 text_content
-                    title_bounds = update_time_title.info.get('bounds', {})
-                    if title_bounds:
-                        title_bottom = title_bounds.get('bottom', 0)
-                        title_left = title_bounds.get('left', 0)
-                        title_right = title_bounds.get('right', 0)
+                    # 方法2: 通过位置匹配 - 获取标签下方最近的时间值元素
+                    label_bounds = update_time_label.info.get('bounds', {})
+                    if label_bounds:
+                        label_bottom = label_bounds.get('bottom', 0)
+                        label_left = label_bounds.get('left', 0)
                         
-                        # 查找所有 text_content 元素
-                        all_contents = self.d(resourceId="com.upgadata.up7723:id/text_content")
-                        for content in all_contents:
+                        # 查找所有时间值元素
+                        all_time_elems = self.d(resourceId="com.xmcy.hykb:id/item_gametail_gameinfo_text_bottomtext")
+                        for elem in all_time_elems:
                             try:
-                                content_bounds = content.info.get('bounds', {})
-                                if content_bounds:
-                                    content_top = content_bounds.get('top', 0)
-                                    content_left = content_bounds.get('left', 0)
-                                    # 检查是否在标题下方且水平位置接近
-                                    if content_top >= title_bottom - 10 and abs(content_left - title_left) < 50:
-                                        time_text = content.get_text()
+                                elem_bounds = elem.info.get('bounds', {})
+                                if elem_bounds:
+                                    elem_top = elem_bounds.get('top', 0)
+                                    elem_left = elem_bounds.get('left', 0)
+                                    # 检查是否在标签下方且水平位置接近
+                                    if elem_top >= label_bottom - 10 and abs(elem_left - label_left) < 100:
+                                        time_text = elem.get_text()
                                         logger.info(f"检测到更新时间文本 (位置匹配): {time_text}")
                                         break
                             except:
                                 continue
                 except Exception as e:
                     logger.debug(f"位置匹配方法失败: {e}")
+        else:
+            logger.warning("未找到【更新时间】标签")
+        
+        # 3. 点击空白处关闭弹窗
+        self._click_blank_area()
+        time.sleep(0.5)
         
         if time_text:
             # 使用当前日期作为采集过滤条件
@@ -550,15 +546,15 @@ class Bot7723:
 
     def perform_share(self):
         """执行分享操作，获取链接并上报"""
-        # 1. 点击"更多"按钮
-        more_btn = self.d.xpath('//*[@resource-id="com.upgadata.up7723:id/more"]')
-        if more_btn.exists:
-            logger.info("点击【更多】按钮")
-            more_btn.click()
+        # 1. 点击分享按钮
+        share_btn = self.d.xpath('//*[@resource-id="com.xmcy.hykb:id/iv_btn_more"]')
+        if share_btn.exists:
+            logger.info("点击【分享】按钮")
+            share_btn.click()
             time.sleep(2)
             
             # 2. 点击"复制链接"
-            copy_url_btn = self.d.xpath('//*[@resource-id="com.upgadata.up7723:id/subject_copy_url"]')
+            copy_url_btn = self.d(resourceId="com.xmcy.hykb:id/tv_share_title", text="复制链接")
             if copy_url_btn.exists:
                 logger.info("点击【复制链接】按钮")
                 copy_url_btn.click()
@@ -581,15 +577,15 @@ class Bot7723:
                 logger.warning("未能找到【复制链接】按钮")
                 self.d.press("back")
         else:
-            logger.warning("未能找到【更多】按钮")
+            logger.warning("未能找到【分享】按钮")
 
         return False
 
 
-def run_7723(stop_func=None):
+def run_hykb(stop_func=None):
     """GUI 调用的核心入口"""
-    bot = Bot7723()
+    bot = BotHYKB()
     bot.start(stop_func)
 
 if __name__ == "__main__":
-    run_7723()
+    run_hykb()
