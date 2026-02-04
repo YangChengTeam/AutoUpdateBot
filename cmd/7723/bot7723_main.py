@@ -288,6 +288,28 @@ class Bot7723:
         
         self.d.swipe(start_x, start_y, start_x, end_y, duration=0.3)
         time.sleep(0.8)
+        
+        # 检查页面是否错位
+        self._check_and_fix_page_misalignment()
+
+    def _check_and_fix_page_misalignment(self):
+        """检查并修复页面错位问题（滑动时误触发了底部 tab）"""
+        try:
+            # 如果出现"新游榜"标题，说明页面错位了（进入了首页的新游榜栏目）
+            misaligned_indicator = self.d(resourceId="com.upgadata.up7723:id/title_text", text="新游榜")
+            if misaligned_indicator.exists(timeout=0.5):
+                logger.warning("检测到页面错位（误触了底部 tab），正在修复...")
+                # 点击"首页" tab 来重置
+                home_tab = self.d(resourceId="com.upgadata.up7723:id/tab_name", text="首页")
+                if home_tab.exists:
+                    home_tab.click()
+                    time.sleep(1)
+                    logger.info("已点击【首页】tab 修复错位")
+                    # 然后返回详情页
+                    self.d.press("back")
+                    time.sleep(0.5)
+        except Exception as e:
+            logger.debug(f"页面错位检查失败: {e}")
 
 
     def _scroll_to_last_item(self, last_title=None):
