@@ -1,0 +1,14 @@
+# 文件监听器配置
+watcher:
+  # 监听的 Windows 绝对路径
+  watch_dir: "D:\\2025 ai项目\\AutoUpdateBot\\temp"
+  # Redis 队列基础名称，最终会拼接为 {queue_name}_{port}
+  queue_name: "apk_task_queue"
+  # 模拟器端口，多个端口用逗号分隔
+  ports: "7555,7557"
+
+# Redis 基础配置
+redis:
+  host: "172.16.6.23"
+  port: 6379
+  db: 0

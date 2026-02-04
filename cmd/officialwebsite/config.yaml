@@ -1,0 +1,30 @@
+# 官网更新机器人专用配置
+keywords:
+  - "Android"
+  - "下载"
+  - "Download"
+  - "APK"
+  - "安卓"
+  - "立即下载"
+  - "直接下载"
+
+# SFTP 配置 (如果为空则使用全局 settings.yaml)
+sftp:
+  host: 192.168.80.151
+  port: 22
+  user: root
+  password: yangfei@123
+  remote_dir: /home/down/emulator
+
+# API 上报配置 (如果为空则使用全局 settings.yaml)
+api:
+  url: http://fees.5156xz.com/api/apk/localTask/apkUpdate
+
+# Redis 配置
+redis:
+  host: 172.16.6.23
+  port: 6379
+  db: 0
+
+# 队列名称
+queue_name: "official_website_update_queue"

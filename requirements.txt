@@ -1,0 +1,5 @@
+redis
+playwright
+requests
+paramiko
+pyyaml
