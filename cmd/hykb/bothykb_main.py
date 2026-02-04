@@ -295,14 +295,12 @@ class BotHYKB:
         time.sleep(0.5)
 
     def _scroll_to_last_item(self, last_title=None):
-        """重置列表并滚动到上次处理的项目"""
-        self.reset_list_position()
-        
+        """滚动找到上次处理的项目（不重置列表位置）"""
         if not last_title:
             return True
         
         # 滚动直到找到上次处理的项目
-        for i in range(15):  # 最多滚动15次
+        for i in range(5):  # 最多滚动5次
             # 查找是否有该标题
             title_elem = self.d.xpath(f'//*[@resource-id="com.xmcy.hykb:id/item_homeindex_game_title"]/android.widget.TextView[@text="{last_title}"]')
             if title_elem.exists:
@@ -313,7 +311,7 @@ class BotHYKB:
             self._swipe_up()
             time.sleep(0.5)
         
-        logger.info(f"未找到上次处理的项目【{last_title}】，可能已滚过，继续采集")
+        logger.info(f"未找到上次处理的项目【{last_title}】，继续采集")
         return True
 
     def process_list(self, stop_func=None):
