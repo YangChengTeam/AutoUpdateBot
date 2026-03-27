@@ -2,4 +2,10 @@ redis
 playwright
 requests
 paramiko
-pyyaml
+PyYAML
+uiautomator2
+rapidocr-onnxruntime
+pyaxmlparser
+fastapi
+uvicorn
+blake3
