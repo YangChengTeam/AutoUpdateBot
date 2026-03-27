@@ -18,6 +18,7 @@ class ReportService:
     def set_config(self, api_config):
         self.base_url = api_config.get('url')
         self.share_url = api_config.get('share_url')
+        self.download_url = api_config.get('download_url')
 
     def notify_failure(self, apk_info):
         pass
@@ -53,6 +54,14 @@ class ReportService:
         print(f"--> [API] 正在按照新格式上报 App 链接: {payload}...")
         return self._send_post(payload, url=self.share_url)
 
+    def report_download_info(self, data: dict):
+        """
+        上报下载信息（APK 解析结果 + 下载地址）
+        :param data: dict, 包含 apk_info 和 download_url 等信息
+        """
+        print(f"--> [API] 正在上报下载信息: {data.get('package', data.get('data', {}).get('package_name', 'Unknown'))}...")
+        return self._send_post(data, url=self.download_url)
+
     def _send_post(self, data, url=None):
         """内部方法：发送 POST 请求"""
         target_url = url if url else self.base_url
@@ -61,6 +70,10 @@ class ReportService:
             return False
             
         try:
+            # 加入日志，方便查阅请求体
+            import json
+            print(f"    [API] 请求体: {json.dumps(data, ensure_ascii=False)}")
+            
             resp = requests.post(
                 target_url, 
                 json=data, 
@@ -69,7 +82,7 @@ class ReportService:
             )
             
             if resp.status_code == 200:
-                print(f"    [API] 上报成功! Server回应: {resp.text[:50]}")
+                print(f"    [API] 上报成功! Server回应: {resp.text}")
                 return True
             else:
                 print(f"    [API] 上报失败: HTTP {resp.status_code} - {resp.text}")

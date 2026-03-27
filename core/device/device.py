@@ -1,4 +1,6 @@
 import uiautomator2 as u2
+import subprocess
+import os
 import time
 
 class DeviceManager:
@@ -112,3 +114,73 @@ class DeviceManager:
         except Exception as e:
             print(f"    [Device] APK 安装失败: {e}")
             return False
+
+    def adb_pull(self, remote_path: str, local_path: str) -> bool:
+        """
+        从设备拉取文件到本地
+        :param remote_path: 设备上的文件路径
+        :param local_path: 本地保存路径
+        :return: 是否成功
+        """
+        print(f"---> [Device] 正在拉取文件: {remote_path} -> {local_path}")
+        try:
+            # 确保本地目录存在
+            local_dir = os.path.dirname(local_path)
+            if local_dir and not os.path.exists(local_dir):
+                os.makedirs(local_dir)
+            
+            # 构建 adb pull 命令
+            cmd = ['adb', '-s', self.serial, 'pull', remote_path, local_path]
+            
+            # Windows 下隐藏控制台窗口
+            creationflags = 0x08000000 if os.name == 'nt' else 0
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                creationflags=creationflags
+            )
+            
+            if result.returncode == 0 and os.path.exists(local_path):
+                file_size = os.path.getsize(local_path)
+                print(f"    [Device] 拉取成功: {local_path} ({file_size} bytes)")
+                return True
+            else:
+                print(f"    [Device] 拉取失败: {result.stderr}")
+                return False
+                
+        except Exception as e:
+            print(f"    [Device] 拉取异常: {e}")
+            return False
+
+    def list_dir_adb(self, remote_dir: str) -> list:
+        """
+        列出设备上目录的文件
+        :param remote_dir: 设备上的目录路径
+        :return: 文件名列表
+        """
+        try:
+            cmd = ['adb', '-s', self.serial, 'shell', 'ls', remote_dir]
+            creationflags = 0x08000000 if os.name == 'nt' else 0
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                creationflags=creationflags
+            )
+            
+            if result.returncode == 0 and result.stdout:
+                files = [f.strip() for f in result.stdout.strip().split('\n') if f.strip()]
+                return files
+            else:
+                return []
+                
+        except Exception as e:
+            print(f"    [Device] 列目录失败: {e}")
+            return []

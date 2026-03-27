@@ -42,5 +42,8 @@ class SftpUploader:
     def upload_apk(self, localpath):
         return self.upload(self.cfg["remote_dir"], localpath)
 
+    def upload_icon(self, localpath):
+        return self.upload(self.cfg["remote_icon_dir"], localpath)
+
     def upload_screenhot(self, localpath):
         return self.upload(self.cfg["remote_screenshots_dir"], localpath)

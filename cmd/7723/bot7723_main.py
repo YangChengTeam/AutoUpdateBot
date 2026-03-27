@@ -124,24 +124,32 @@ class Bot7723:
         """判断是否在详情页"""
         if activity is None:
             activity = self.get_activity()
-        # 7723 的详情页 Activity 名称
-        return "DetailGameActivity" in activity
+        # 7723 的详情页 Activity 名称，支持游戏详情页和社区详情页
+        return "DetailGameActivity" in activity or "UpTalkDetailActivity" in activity
 
-    def is_home_page(self, activity=None):
-        """判断是否在首页的新游页面 (检查新游标签是否为选中状态)"""
+    def is_mod_page(self, activity=None):
+        """判断是否在 MOD 页面的最新标签"""
         if activity is None:
             activity = self.get_activity()
-        # 首先检查是否在 HomeActivity
-        if "HomeActivity" not in activity:
+        
+        # 允许在 HomeActivity 或者是 NewClassicTagGameActivity
+        if "NewClassicTagGameActivity" not in activity:
+            logger.debug(f"is_mod_page: 当前 Activity 不是 NewClassicTagGameActivity (当前: {activity})")
             return False
-        # 然后检查"新游"标签是否为选中状态
-        new_game_tab = self.d(text="新游")
-        if new_game_tab.exists:
+            
+        # 然后检查"最新"标签是否为选中状态
+        latest_tab = self.d(text="最新")
+        if latest_tab.exists:
             try:
-                return new_game_tab.info.get('selected', False)
-            except:
-                return False
-        return False
+                selected = latest_tab.info.get('selected', False)
+                logger.debug(f"is_mod_page: 找到'最新'标签, selected={selected}")
+                return selected
+            except Exception as e:
+                logger.warning(f"is_mod_page: 获取标签状态异常: {e}")
+                # 兜底：如果已经在 Activity 但获取不到选中状态，视为已在页面
+                return True
+        
+        return True
 
     def start(self, stop_func=None):
         logger.info("正在启动 7723 应用...")
@@ -158,42 +166,60 @@ class Bot7723:
             # 处理可能出现的弹窗
             self.handle_popups()
             
-            # 检测是否在新游页面 (新游标签被选中)
-            if self.is_home_page(activity):
-                logger.info("检测到已进入【新游】页面，开始采集...")
+            # 检测是否在 MOD 页面
+            if self.is_mod_page(activity):
+                logger.info("检测到已进入【MOD-最新】页面，开始采集...")
                 self.loop_crawl(stop_func)
                 break
             else:
-                logger.info(f"当前不在【新游】页面 (当前 Activity: {activity})，尝试自动导航...")
+                logger.info(f"当前不在【MOD-最新】页面 (当前 Activity: {activity})，尝试自动导航...")
                 self.handle_popups()
-                if not self.navigate_to_new_games():
-                    logger.warning("自动导航失败，请手动切换到【新游】页面...")
+                if not self.navigate_to_mod():
+                    logger.warning("自动导航失败，请手动切换到【MOD-最新】页面...")
                     time.sleep(5)
 
-    def navigate_to_new_games(self):
-        """导航到新游页面"""
+    def navigate_to_mod(self):
+        """导航到 MOD -> 最新 页面"""
         activity = self.get_activity()
+        logger.info(f"开始导航到 MOD 页面 (当前 Activity: {activity})")
         
-        # 0. 如果已经在新游页面 (新游标签被选中)，直接返回成功
-        if self.is_home_page(activity):
-            logger.info("已在【新游】页面")
+        # 0. 如果已经在页面，直接返回成功
+        if self.is_mod_page(activity):
+            logger.info("确认已在【MOD-最新】页面")
             return True
         
         # 1. 处理弹窗
         self.handle_popups()
         
-        # 2. 点击"新游"标签
-        new_game_btn = self.d(text="新游")
-        if new_game_btn.exists:
-            logger.info("点击【新游】标签")
-            new_game_btn.click()
-            time.sleep(2)
-            
-            # 检查新游标签是否变为选中状态
-            if self.is_home_page():
-                logger.info("成功进入【新游】页面")
-                return True
+        # 2. 如果在 HomeActivity，点击 MOD
+        if "HomeActivity" in activity:
+            mod_btn = self.d(resourceId="com.upgadata.up7723:id/header_home_text_name", text="MOD")
+            if mod_btn.exists:
+                logger.info("点击主页【MOD】按钮")
+                mod_btn.click()
+                time.sleep(3)
+                activity = self.get_activity()
+            else:
+                logger.warning("未能在主页找到【MOD】按钮")
         
+        # 3. 如果在 NewClassicTagGameActivity，点击 最新
+        if "NewClassicTagGameActivity" in activity:
+            latest_btn = self.d(text="最新")
+            if latest_btn.exists:
+                logger.info("点击【最新】标签")
+                latest_btn.click()
+                time.sleep(2)
+                
+                # 检查最新标签是否变为选中状态
+                if self.is_mod_page():
+                    logger.info("成功进入【MOD-最新】页面")
+                    return True
+                else:
+                    logger.warning("已点击【最新】但检测结果仍为 False")
+            else:
+                logger.warning("在 NewClassicTagGameActivity 未找到【最新】按钮")
+        
+        logger.warning(f"导航结束，未检测到成功进入目标页面 (当前 Activity: {activity})")
         return False
 
     def handle_popups(self):
@@ -220,6 +246,19 @@ class Bot7723:
             except:
                 pass
 
+    def back_to_home(self):
+        """返回到主页 Activity"""
+        for _ in range(8):
+            self.handle_popups()
+            activity = self.get_activity()
+            if "HomeActivity" in activity:
+                logger.info("已返回主页")
+                return True
+            logger.info(f"当前 Activity: {activity}, 尝试返回...")
+            self.d.press("back")
+            time.sleep(1.5)
+        return False
+
     def loop_crawl(self, stop_func=None):
         while True:
             if stop_func and stop_func():
@@ -231,44 +270,33 @@ class Bot7723:
             # 每轮循环前重新加载当天日志，确保日期切换时使用正确的记录
             self._reload_daily_records()
             
+            found_old_data = False
             try:
-                self.process_list(stop_func)
+                found_old_data = self.process_list(stop_func)
             except Exception as e:
                 logger.error(f"处理列表时出错: {e}")
 
-            # 如果在详情页，先返回列表页
-            if self.is_detail_page():
-                logger.info("当前位于详情页，返回列表...")
-                self.d.press("back")
-                time.sleep(1.5)
+            # 无论是否发现旧数据，本轮结束后都退出到首页重新进入，以重置状态
+            logger.info("本轮采集结束，退出到首页并重新进入列表以重置状态...")
+            self.back_to_home()
             
-            # 通过切换 tab 重置列表位置（精选 -> 新游）
-            logger.info("通过切换 tab 重置列表位置...")
-            try:
-                jingxuan_btn = self.d(text="精选")
-                if jingxuan_btn.exists:
-                    jingxuan_btn.click()
-                    time.sleep(0.5)
-                
-                xinyou_btn = self.d(text="新游")
-                if xinyou_btn.exists:
-                    xinyou_btn.click()
-                    time.sleep(1)
-                    logger.info("已切换到【新游】页面")
-            except Exception as e:
-                logger.warning(f"切换 tab 失败: {e}，尝试back导航...")
-                self.d.press("back")
-                time.sleep(2)
-                self.navigate_to_new_games()
+            if not self.navigate_to_mod():
+                logger.warning("重新导航失败，尝试重置应用...")
+                self.d.app_start(self.package_name, stop=True)
+                time.sleep(5)
+                self.navigate_to_mod()
             
-            time.sleep(1)
+            if found_old_data:
+                logger.info("由于发现旧数据，立即开始下一轮采集循环...")
+                continue
             
-            # 优化等待，支持快速中止
-            logger.info("等待 60 秒后开始下一轮...")
+            # 如果没有发现旧数据（可能是列表到底了），等待一段时间
+            logger.info("本轮处理完毕，等待 60 秒后开始下一轮...")
             for _ in range(60):
                 if stop_func and stop_func():
                     return
                 time.sleep(1)
+
 
     def _swipe_up(self):
         """上拉滑动"""
@@ -288,42 +316,20 @@ class Bot7723:
         
         self.d.swipe(start_x, start_y, start_x, end_y, duration=0.3)
         time.sleep(0.8)
-        
-        # 检查页面是否错位
-        self._check_and_fix_page_misalignment()
-
-    def _check_and_fix_page_misalignment(self):
-        """检查并修复页面错位问题（滑动时误触发了底部 tab）"""
-        try:
-            # 如果出现"新游榜"标题，说明页面错位了（进入了首页的新游榜栏目）
-            misaligned_indicator = self.d(resourceId="com.upgadata.up7723:id/title_text", text="新游榜")
-            if misaligned_indicator.exists(timeout=0.5):
-                logger.warning("检测到页面错位（误触了底部 tab），正在修复...")
-                # 点击"首页" tab 来重置
-                home_tab = self.d(resourceId="com.upgadata.up7723:id/tab_name", text="首页")
-                if home_tab.exists:
-                    home_tab.click()
-                    time.sleep(1)
-                    logger.info("已点击【首页】tab 修复错位")
-                    # 然后返回详情页
-                    self.d.press("back")
-                    time.sleep(0.5)
-        except Exception as e:
-            logger.debug(f"页面错位检查失败: {e}")
 
 
     def _scroll_to_last_item(self, last_title=None):
         """通过切换 tab 重置列表位置，然后滚动到上次处理的项目"""
-        # 先点击"精选"再点击"新游"，可以重置列表到今日位置
+        # 先点击"最热"再点击"最新"，可以重置列表
         try:
-            jingxuan_btn = self.d(text="精选")
-            if jingxuan_btn.exists:
-                jingxuan_btn.click()
+            hottest_btn = self.d(text="最热")
+            if hottest_btn.exists:
+                hottest_btn.click()
                 time.sleep(0.5)
             
-            xinyou_btn = self.d(text="新游")
-            if xinyou_btn.exists:
-                xinyou_btn.click()
+            latest_btn = self.d(text="最新")
+            if latest_btn.exists:
+                latest_btn.click()
                 time.sleep(1)
         except Exception as e:
             logger.debug(f"切换 tab 失败: {e}")
@@ -362,14 +368,12 @@ class Bot7723:
             if stop_func and stop_func():
                 return False
             
-            # 必须是在新游页面才能点击
-            if not self.is_home_page():
-                logger.warning(f"当前不在新游页面 (Activity: {self.get_activity()})，尝试回退...")
+            # 必须在目标页面才能点击
+            if not self.is_mod_page():
+                logger.warning(f"当前不在 MOD 页面 (Activity: {self.get_activity()})，尝试导航...")
                 self.handle_popups()
-                self.d.press("back")
-                time.sleep(1.5)
-                if not self.is_home_page():
-                    logger.error("无法返回新游页面，跳出本轮循环")
+                if not self.navigate_to_mod():
+                    logger.error("无法进入 MOD 页面，跳出本轮循环")
                     return False
 
             # 直接查找所有的标题元素
@@ -389,7 +393,7 @@ class Bot7723:
                 if stop_func and stop_func():
                     return False
 
-                if not self.is_home_page():
+                if not self.is_mod_page():
                     break
 
                 try:
@@ -446,8 +450,8 @@ class Bot7723:
                         break
                 except Exception as e:
                     logger.error(f"处理项目时出错: {e}")
-                    if not self.is_home_page():
-                        self.d.press("back")
+                    if not self.is_mod_page():
+                        self.navigate_to_mod()
 
             # 底部检测
             if current_screen_last_title:
@@ -570,6 +574,27 @@ class Bot7723:
 
         return None
 
+    def _convert_share_url(self, raw_url):
+        """
+        将原始分享链接转换为标准格式
+        例如: http://s.7723.cn/202602111211/468a777da347a7a475c3b5b00d09dcce/game/152054/flag/1
+        转换为: https://www.7723.cn/apps/152054
+        """
+        if not raw_url:
+            return None
+        
+        # 从 URL 中提取 game ID
+        # 兼容 /game/、/apps/ 路径，以及以 /、.html 或字符串末尾结尾的情况
+        match = re.search(r'/(?:game|apps)/(\d+)(?:/|\.|$)', raw_url)
+        if match:
+            game_id = match.group(1)
+            converted_url = f"https://www.7723.cn/apps/{game_id}"
+            logger.info(f"URL 转换: {raw_url} -> {converted_url}")
+            return converted_url
+        else:
+            logger.warning(f"无法从 URL 中提取游戏 ID: {raw_url}")
+            return raw_url  # 返回原始链接作为兜底
+
     def perform_share(self):
         """执行分享操作，获取链接并上报"""
         # 1. 点击"更多"按钮
@@ -587,14 +612,17 @@ class Bot7723:
                 time.sleep(1)
                 
                 # 3. 从剪贴板获取链接
-                share_url = self.d.clipboard
-                logger.info(f"获取到分享链接: {share_url}")
+                raw_url = self.d.clipboard
+                logger.info(f"获取到原始分享链接: {raw_url}")
                 
-                # 4. 上报
+                # 4. 转换 URL 格式
+                share_url = self._convert_share_url(raw_url)
+                
+                # 5. 上报
                 if share_url:
                     self.reporter.report_app_urls([share_url])
                     
-                    # 5. 记录到每日日志
+                    # 6. 记录到每日日志
                     self._write_to_daily_log(self.current_title, share_url)
                     return True
                 else:

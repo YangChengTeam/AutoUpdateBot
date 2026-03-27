@@ -657,7 +657,7 @@ class ApkUpdaterGUI:
             
             # 使用 adb 卸载应用
             cmd = f"adb -s {serial} uninstall {package}"
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='replace')
             
             if result.returncode == 0 and "Success" in result.stdout:
                 self.app_status_label.config(text=f"已卸载: {app['name']}", fg="#00e676")
