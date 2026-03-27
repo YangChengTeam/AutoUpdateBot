@@ -1,0 +1,63 @@
+# Android 模拟器配置
+emulator:
+  serial: '127.0.0.1:7555'
+
+# 检测关键字配置
+detection:
+  timeout: 60
+  click_wait: 5
+  # 点击跳过按钮时匹配的关键字
+  skip_keywords:
+    - "完成"
+    - "关闭"
+    - "取消"
+    - "同意"
+    - "知道了"
+    - "关闭应用"
+    - "去开启"
+    - "下一步"
+    - "确定"
+    - "允许"
+  # 下载/更新按钮匹配的关键字
+  download_keywords:
+    - "立即升级"
+    - "继续安装"
+    - "立即更新"
+    - "立即安装"
+    - "去更新"
+    - "下载更新"
+    - "更新"
+  # 更新列表匹配的关键字
+  update_keywords:
+    - "更新"
+
+# 过滤包名列表（不在这些包名中查找更新）
+filter_packages: []
+
+# 是否为测试模式（1=测试，0=生产）
+istest: 1
+
+# 自动循环采集
+loop_enabled: true
+loop_interval: 300  # 循环间隔（秒）
+
+# SFTP 上传配置
+sftp:
+  host: 'YOUR_SFTP_HOST'
+  port: 22
+  user: 'YOUR_SFTP_USER'
+  password: 'YOUR_SFTP_PASSWORD'
+  remote_dir: '/home/down/emulator'
+  remote_screenshots_dir: '/home/apkicon/'
+
+# Redis 队列配置
+redis:
+  host: 'localhost'
+  port: 6379
+  db: 0
+
+# API 上报配置
+api:
+  url: 'http://YOUR_API_HOST/api/apk/localTask/apkUpdate'
+  share_url: 'http://YOUR_API_HOST/api/pick/callback/appUrl'
+  download_url: 'http://YOUR_API_HOST/api/pick/callback/appInfo'
